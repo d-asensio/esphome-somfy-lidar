@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  firmware:
+    name: Build example firmware
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: platformio-${{ runner.os }}-${{ hashFiles('example/awning.yaml') }}
+      - name: Install ESPHome
+        run: pip install esphome
+      - name: Prepare config
+        # Build against the components in this checkout instead of the published ones.
+        run: |
+          sed 's#source: github://d-asensio/esphome-somfy-lidar@main#source: {type: local, path: ../components}#' \
+            example/awning.yaml > example/ci.yaml
+          grep -q 'type: local' example/ci.yaml
+          cat > example/secrets.yaml <<'SECRETS'
+          wifi_ssid: "ci"
+          wifi_password: "ci-password"
+          api_encryption_key: "aGVsbG93b3JsZGhlbGxvd29ybGRoZWxsb3dvcmxkMTI="
+          SECRETS
+      - name: Validate
+        run: esphome config example/ci.yaml
+      - name: Compile
+        run: esphome compile example/ci.yaml
+
+  simulation:
+    name: Closed-loop simulation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install ESPHome
+        run: pip install esphome
+      - name: Run simulation
+        run: tests/run_sim.sh
