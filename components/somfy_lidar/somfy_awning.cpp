@@ -7,9 +7,9 @@
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 
-namespace esphome::somfy_awning {
+namespace esphome::somfy_lidar {
 
-static const char *const TAG = "somfy_awning";
+static const char *const TAG = "somfy_lidar.awning";
 
 static const uint32_t CALIBRATION_MAGIC = 0x41574E31;  // "AWN1"
 static const float MIN_SPAN_CM = 20.0f;
@@ -38,6 +38,8 @@ void SomfyAwning::setup() {
     this->cal_ = stored;
   }
   this->sensor_->add_on_state_callback([this](float cm) { this->on_distance_(cm); });
+  if (this->stop_latency_sensor_ != nullptr)
+    this->defer([this]() { this->stop_latency_sensor_->publish_state(this->cal_.stop_latency_s); });
 }
 
 void SomfyAwning::dump_config() {
@@ -48,7 +50,7 @@ void SomfyAwning::dump_config() {
                 "  Stop latency: %.2f s\n"
                 "  Position tolerance: %.1f%%\n"
                 "  Max travel time: %" PRIu32 " ms",
-                somfy_rts::command_to_string(this->open_cmd_), YESNO(this->is_calibrated()), this->cal_.closed_cm,
+                command_to_string(this->open_cmd_), YESNO(this->is_calibrated()), this->cal_.closed_cm,
                 this->cal_.open_cm, this->cal_.stop_latency_s, this->tolerance_ * 100.0f, this->max_travel_ms_);
 }
 
@@ -191,6 +193,8 @@ void SomfyAwning::control(const cover::CoverCall &call) {
 void SomfyAwning::on_distance_(float cm) {
   if (std::isnan(cm))
     return;  // timeouts are handled in loop()
+  if (this->reported_distance_ != nullptr)
+    this->reported_distance_->publish_state(cm);
   const uint32_t now = millis();
   this->last_cm_ = cm;
   this->last_valid_ms_ = now;
@@ -401,6 +405,26 @@ void SomfyAwning::set_open_here() {
 void SomfyAwning::save_calibration_() {
   this->cal_.magic = CALIBRATION_MAGIC;
   this->pref_.save(&this->cal_);
+  if (this->stop_latency_sensor_ != nullptr)
+    this->stop_latency_sensor_->publish_state(this->cal_.stop_latency_s);
+}
+
+void AwningButton::press_action() {
+  switch (this->action_) {
+    case ButtonAction::CALIBRATE:
+      this->parent_->start_calibration();
+      break;
+    case ButtonAction::SET_CLOSED_HERE:
+      this->parent_->set_closed_here();
+      break;
+    case ButtonAction::SET_OPEN_HERE:
+      this->parent_->set_open_here();
+      break;
+    case ButtonAction::PROG:
+      // Long enough for the motor to register a new remote while in programming mode.
+      this->parent_->send_command(Command::PROG, 7);
+      break;
+  }
 }
 
 void SomfyAwning::publish_(bool force) {
@@ -426,4 +450,4 @@ void SomfyAwning::publish_(bool force) {
   this->publish_state(false);
 }
 
-}  // namespace esphome::somfy_awning
+}  // namespace esphome::somfy_lidar

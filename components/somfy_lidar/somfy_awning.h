@@ -2,15 +2,15 @@
 
 #include <array>
 
+#include "esphome/core/automation.h"
 #include "esphome/core/component.h"
 #include "esphome/core/preferences.h"
+#include "esphome/components/button/button.h"
 #include "esphome/components/cover/cover.h"
 #include "esphome/components/sensor/sensor.h"
-#include "esphome/components/somfy_rts/somfy_rts.h"
+#include "somfy_rts.h"
 
-namespace esphome::somfy_awning {
-
-using somfy_rts::Command;
+namespace esphome::somfy_lidar {
 
 /// Stored in flash so calibration survives reboots and reflashes.
 struct Calibration {
@@ -28,8 +28,11 @@ struct Calibration {
 /// Movement started by the physical remote is picked up from the sensor too.
 class SomfyAwning : public cover::Cover, public Component {
  public:
-  void set_remote(somfy_rts::SomfyRTSRemote *remote) { this->remote_ = remote; }
+  void set_remote(SomfyRTSRemote *remote) { this->remote_ = remote; }
   void set_distance_sensor(sensor::Sensor *sensor) { this->sensor_ = sensor; }
+  /// Optional copy of the distance for Home Assistant, usually throttled by filters.
+  void set_reported_distance_sensor(sensor::Sensor *sensor) { this->reported_distance_ = sensor; }
+  void set_stop_latency_sensor(sensor::Sensor *sensor) { this->stop_latency_sensor_ = sensor; }
   void set_commands(Command open_cmd, Command close_cmd) {
     this->open_cmd_ = open_cmd;
     this->close_cmd_ = close_cmd;
@@ -55,6 +58,8 @@ class SomfyAwning : public cover::Cover, public Component {
   void set_closed_here();
   void set_open_here();
   bool is_calibrated() const;
+  /// Sends a raw RTS command, e.g. MY to go to the motor's favourite position.
+  void send_command(Command command, uint8_t repeat) { this->remote_->send_command(command, repeat); }
   float get_stop_latency() const { return this->cal_.stop_latency_s; }
 
  protected:
@@ -85,8 +90,10 @@ class SomfyAwning : public cover::Cover, public Component {
   float position_for_(float cm) const;
   bool is_still_for_(uint32_t ms) const;
 
-  somfy_rts::SomfyRTSRemote *remote_{nullptr};
+  SomfyRTSRemote *remote_{nullptr};
   sensor::Sensor *sensor_{nullptr};
+  sensor::Sensor *reported_distance_{nullptr};
+  sensor::Sensor *stop_latency_sensor_{nullptr};
   Command open_cmd_{Command::DOWN};
   Command close_cmd_{Command::UP};
   float tolerance_{0.02f};
@@ -118,4 +125,28 @@ class SomfyAwning : public cover::Cover, public Component {
   uint32_t last_publish_ms_{0};
 };
 
-}  // namespace esphome::somfy_awning
+enum class ButtonAction : uint8_t { CALIBRATE, SET_CLOSED_HERE, SET_OPEN_HERE, PROG };
+
+class AwningButton : public button::Button, public Parented<SomfyAwning> {
+ public:
+  void set_action(ButtonAction action) { this->action_ = action; }
+
+ protected:
+  void press_action() override;
+
+  ButtonAction action_{ButtonAction::CALIBRATE};
+};
+
+template<typename... Ts> class SendCommandAction : public Action<Ts...>, public Parented<SomfyAwning> {
+ public:
+  void set_command(Command command) { this->command_ = command; }
+  void set_repeat(uint8_t repeat) { this->repeat_ = repeat; }
+
+  void play(const Ts &...x) override { this->parent_->send_command(this->command_, this->repeat_); }
+
+ protected:
+  Command command_{Command::MY};
+  uint8_t repeat_{2};
+};
+
+}  // namespace esphome::somfy_lidar

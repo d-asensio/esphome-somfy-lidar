@@ -1,36 +1,27 @@
-# Somfy RTS awning with closed-loop positioning from a TF-Luna lidar.
+# Somfy RTS awning with its position measured by a TF-Luna lidar.
 # https://github.com/d-asensio/esphome-somfy-lidar
 #
-# Wiring (ESP32 DevKit; the CC1101 pins match ESPSomfy RTS defaults):
-#   CC1101  SCK->GPIO18  MISO->GPIO19  MOSI->GPIO23  CSN->GPIO5  GDO0->GPIO13  VCC->3V3
-#   TF-Luna pin1 5V   pin2 TX->GPIO16   pin3 RX->GPIO17   pin4 GND   pin5 (CFG) unconnected
-# See the README for pairing and calibration.
-
-substitutions:
-  name: awning
-  friendly_name: Awning
+# Hardware: ESP32-S3 board (8MB flash), Ebyte E07-M1101D-SMA (CC1101, 433 MHz)
+# with a 433 MHz antenna, and a Benewake TF-Luna in I2C mode.
+#
+# Wiring:
+#   E07-M1101D   VCC->3V3  GND->GND  SCK->GPIO12  MOSI->GPIO11  MISO->GPIO13
+#                CSN->GPIO10  GDO0->GPIO9  (GDO2 unused)
+#   TF-Luna      1 (5V)->5V  2 (SDA)->GPIO4  3 (SCL)->GPIO5  4 (GND)->GND
+#                5 (CFG)->GND to select I2C  (6 unused)
+#
+# Everything above the "Awning" section is standard ESPHome setup.
 
 esphome:
-  name: ${name}
-  friendly_name: ${friendly_name}
+  name: awning
+  friendly_name: Awning
   min_version: 2026.9.0
-  project:
-    name: d-asensio.esphome-somfy-lidar
-    version: "0.1.0"
-  on_boot:
-    # The transceiver starts in RX and drives GDO0; keep it idle until we transmit.
-    priority: -100
-    then:
-      - cc1101.set_idle: radio
 
 esp32:
-  board: esp32dev
+  board: esp32-s3-devkitc-1
+  flash_size: 8MB
   framework:
     type: esp-idf
-
-external_components:
-  - source: github://d-asensio/esphome-somfy-lidar@main
-    components: [somfy_rts, tfluna, somfy_awning]
 
 logger:
 
@@ -39,133 +30,46 @@ api:
     key: !secret api_encryption_key
 
 ota:
-  - platform: esphome  # authenticated with the API encryption key
+  - platform: esphome
 
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
   ap:
-    ssid: ${friendly_name} Fallback
+    ssid: Awning Fallback
 
 captive_portal:
 
-# ---------------------------------------------------------------- Radio
+# ---------------------------------------------------------------- Buses
 
+# CC1101 radio
 spi:
-  clk_pin: GPIO18
-  miso_pin: GPIO19
-  mosi_pin: GPIO23
+  clk_pin: GPIO12
+  mosi_pin: GPIO11
+  miso_pin: GPIO13
 
-cc1101:
-  id: radio
-  cs_pin: GPIO5
-  frequency: 433.42MHz  # Somfy RTS, not the usual 433.92MHz
-  modulation_type: ASK/OOK
-  output_power: 10
-
-remote_transmitter:
-  id: rf_tx
-  pin: GPIO13  # CC1101 GDO0
-  carrier_duty_percent: 100%
-  non_blocking: true
-  on_transmit:
-    then:
-      - cc1101.begin_tx: radio
-  on_complete:
-    then:
-      - cc1101.set_idle: radio
-
-somfy_rts:
-  id: awning_remote
-  transmitter_id: rf_tx
-  # Any random 24-bit value, different from every other remote you own.
-  address: 0x1A2B3C
-
-# ---------------------------------------------------------------- Lidar
-
-uart:
-  id: lidar_uart
-  rx_pin: GPIO16
-  tx_pin: GPIO17
-  baud_rate: 115200
-
-sensor:
-  - platform: tfluna
-    uart_id: lidar_uart
-    update_interval: 100ms  # median of ~10 frames per reading
-    distance:
-      id: awning_distance
-      name: Awning distance
-      internal: true  # 10 readings/s is too chatty for Home Assistant
-    signal_strength:
-      name: Lidar signal strength
-      filters:
-        - throttle_average: 30s
-    temperature:
-      name: Lidar temperature
-      filters:
-        - throttle_average: 60s
-
-  - platform: copy
-    source_id: awning_distance
-    name: Awning distance
-    filters:
-      - throttle_average: 5s
-
-  - platform: template
-    name: Awning stop latency
-    entity_category: diagnostic
-    unit_of_measurement: s
-    accuracy_decimals: 2
-    update_interval: 60s
-    lambda: return id(awning).get_stop_latency();
+# TF-Luna lidar
+i2c:
+  sda: GPIO4
+  scl: GPIO5
+  frequency: 100kHz
 
 # ---------------------------------------------------------------- Awning
 
-cover:
-  - platform: somfy_awning
-    id: awning
-    name: None  # the device name is the entity name
-    distance_sensor: awning_distance
-    open_command: DOWN  # change to UP if "open" retracts your awning
+external_components:
+  - source: github://d-asensio/esphome-somfy-lidar@main
+    components: [somfy_lidar]
 
-# ---------------------------------------------------------------- Setup buttons
+somfy_lidar:
+  # Address of the ESP's own virtual remote: any random 24-bit hex value that
+  # differs from your other remotes. Pair it once with the "Send PROG" button.
+  remote_address: 0x1A2B3C  # !!! CHANGE ME !!!
 
-button:
-  - platform: template
-    name: Calibrate
-    icon: mdi:ruler
-    entity_category: config
-    on_press:
-      - lambda: id(awning).start_calibration();
+  # CC1101 pins outside the SPI bus.
+  cs_pin: GPIO10
+  gdo0_pin: GPIO9
 
-  - platform: template
-    name: Set closed position here
-    entity_category: config
-    disabled_by_default: true
-    on_press:
-      - lambda: id(awning).set_closed_here();
+  # Which button extends the awning. Change to UP if "open" retracts it.
+  open_command: DOWN
 
-  - platform: template
-    name: Set open position here
-    entity_category: config
-    disabled_by_default: true
-    on_press:
-      - lambda: id(awning).set_open_here();
-
-  # Pairing: hold PROG on a remote that already controls the awning until it
-  # jogs, then press this within a few seconds. Pressing it again later unpairs.
-  - platform: template
-    name: Send PROG
-    icon: mdi:remote
-    entity_category: config
-    disabled_by_default: true
-    on_press:
-      - somfy_rts.send:
-          id: awning_remote
-          command: PROG
-          repeat: 7
-
-  - platform: restart
-    name: Restart
-    entity_category: diagnostic
+  # Everything else is optional; see the README for all options.

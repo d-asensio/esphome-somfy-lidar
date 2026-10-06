@@ -10,10 +10,10 @@ trap 'rm -rf "$build"' EXIT
 
 mkdir -p "$build/esphome/components"
 cp -r "$pkg/core" "$build/esphome/core"
-for c in host sensor cover remote_base binary_sensor; do
+for c in host sensor cover button remote_base binary_sensor cc1101 spi i2c; do
   cp -r "$pkg/components/$c" "$build/esphome/components/$c"
 done
-cp -r "$here/../components/somfy_rts" "$here/../components/somfy_awning" "$build/esphome/components/"
+cp -r "$here/../components/somfy_lidar" "$build/esphome/components/"
 cat > "$build/esphome/core/defines.h" <<'DEF'
 #pragma once
 #include "esphome/core/macros.h"
@@ -29,8 +29,9 @@ DEF
 cd "$build"
 g++ -std=gnu++20 -O1 -DUSE_HOST -I. -o awning_sim \
   "$here/awning_sim.cpp" "$here/stubs.cpp" \
-  esphome/components/somfy_rts/somfy_rts.cpp \
-  esphome/components/somfy_awning/somfy_awning.cpp \
+  esphome/components/somfy_lidar/somfy_rts.cpp \
+  esphome/components/somfy_lidar/somfy_awning.cpp \
   esphome/components/sensor/*.cpp esphome/components/cover/*.cpp \
+  esphome/components/button/button.cpp \
   esphome/core/*.cpp esphome/core/wake/wake_host.cpp esphome/components/host/*.cpp
 ./awning_sim

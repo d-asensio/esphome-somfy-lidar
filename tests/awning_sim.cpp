@@ -10,7 +10,7 @@
 #include <random>
 #include <thread>
 #include "esphome/core/hal.h"
-#include "esphome/components/somfy_awning/somfy_awning.h"
+#include "esphome/components/somfy_lidar/somfy_awning.h"
 
 using namespace esphome;
 
@@ -81,9 +81,9 @@ class SimTx : public remote_base::RemoteTransmitterBase {
 };
 
 static SimTx tx;
-static somfy_rts::SomfyRTSRemote remote;
+static somfy_lidar::SomfyRTSRemote remote;
 static sensor::Sensor dist;
-static somfy_awning::SomfyAwning awning;
+static somfy_lidar::SomfyAwning awning;
 static std::mt19937 rng(42);
 static std::normal_distribution<float> noise(0.0f, 0.7f);
 static bool sensor_ok = true;
@@ -124,7 +124,7 @@ void setup() {
   remote.setup();
   awning.set_remote(&remote);
   awning.set_distance_sensor(&dist);
-  awning.set_commands(somfy_rts::Command::DOWN, somfy_rts::Command::UP);
+  awning.set_commands(somfy_lidar::Command::DOWN, somfy_lidar::Command::UP);
   awning.set_stop_latency(0.6f);
   awning.set_position_tolerance(0.02f);
   awning.set_min_travel(0.03f);

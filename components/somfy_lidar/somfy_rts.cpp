@@ -2,9 +2,9 @@
 
 #include "esphome/core/log.h"
 
-namespace esphome::somfy_rts {
+namespace esphome::somfy_lidar {
 
-static const char *const TAG = "somfy_rts";
+static const char *const TAG = "somfy_lidar.rts";
 
 // Frame layout and timings are ported from ESPSomfy RTS by rstrouse
 // (https://github.com/rstrouse/ESPSomfy-RTS, Somfy.cpp), where they were
@@ -45,6 +45,10 @@ static void append_level(remote_base::RawTimings &data, bool high, uint32_t usec
 }
 
 void SomfyRTSRemote::setup() {
+  // The CC1101 starts in RX, where it drives GDO0; keep it idle until we transmit.
+  if (this->radio_ != nullptr)
+    this->defer([this]() { this->radio_->set_idle(); });
+
   this->pref_ = global_preferences->make_preference<uint16_t>(0x50AF1E00 ^ this->address_, true);
   uint16_t stored;
   if (this->pref_.load(&stored) && stored != 0) {
@@ -119,10 +123,14 @@ void SomfyRTSRemote::send_command(Command command, uint8_t repeat) {
     append_level(data, false, INTER_FRAME_GAP);
   }
 
+  if (this->radio_ != nullptr)
+    this->radio_->begin_tx();
   auto call = this->transmitter_->transmit();
   call.get_data()->set_carrier_frequency(0);
   call.get_data()->set_data(data);
-  call.perform();
+  call.perform();  // blocks until the last frame is out
+  if (this->radio_ != nullptr)
+    this->radio_->set_idle();
 }
 
-}  // namespace esphome::somfy_rts
+}  // namespace esphome::somfy_lidar
