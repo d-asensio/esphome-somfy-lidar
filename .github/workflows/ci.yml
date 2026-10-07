@@ -8,8 +8,12 @@ on:
 
 jobs:
   firmware:
-    name: Build example firmware
+    name: Build example firmware (${{ matrix.variant }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [lidar, no-lidar]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -27,6 +31,12 @@ jobs:
           sed 's#source: github://d-asensio/esphome-somfy-lidar@main#source: {type: local, path: ../components}#' \
             example/awning.yaml > example/ci.yaml
           grep -q 'type: local' example/ci.yaml
+          if [ "${{ matrix.variant }}" = "no-lidar" ]; then
+            # Without the lidar the i2c: block goes away entirely.
+            sed -i -e '/^i2c:/,/^$/d' -e 's/^  # lidar: false/  lidar: false/' example/ci.yaml
+            grep -q '^  lidar: false' example/ci.yaml
+            ! grep -q '^i2c:' example/ci.yaml
+          fi
           cat > example/secrets.yaml <<'SECRETS'
           wifi_ssid: "ci"
           wifi_password: "ci-password"

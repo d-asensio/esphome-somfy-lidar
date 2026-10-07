@@ -31,6 +31,19 @@ static const float MIN_STOP_LATENCY_S = 0.1f;
 static const float MAX_STOP_LATENCY_S = 3.0f;
 
 void SomfyAwning::setup() {
+  if (this->sensor_ == nullptr) {
+    // Without a lidar the state is assumed: restore the last command's result.
+    auto restore = this->restore_state_();
+    if (restore.has_value()) {
+      restore->apply(this);
+    } else {
+      this->position = cover::COVER_CLOSED;
+    }
+    this->current_operation = cover::COVER_OPERATION_IDLE;
+    this->publish_state(false);
+    this->disable_loop();
+    return;
+  }
   // Non-zero version keeps this apart from the cover's own restore-state slot.
   this->pref_ = this->make_entity_preference<Calibration>(0xA3A1C0DE);
   Calibration stored;
@@ -44,6 +57,13 @@ void SomfyAwning::setup() {
 
 void SomfyAwning::dump_config() {
   LOG_COVER("", "Somfy Awning", this);
+  if (this->sensor_ == nullptr) {
+    ESP_LOGCONFIG(TAG,
+                  "  Open command: %s\n"
+                  "  No lidar: open/close only, assumed state",
+                  command_to_string(this->open_cmd_));
+    return;
+  }
   ESP_LOGCONFIG(TAG,
                 "  Open command: %s\n"
                 "  Calibrated: %s (closed %.1f cm, open %.1f cm)\n"
@@ -56,9 +76,12 @@ void SomfyAwning::dump_config() {
 
 cover::CoverTraits SomfyAwning::get_traits() {
   auto traits = cover::CoverTraits();
-  traits.set_supports_position(true);
-  traits.set_supports_stop(true);
-  traits.set_is_assumed_state(false);
+  // Without a lidar there is no position, and no stop: whether the motor is
+  // still moving is unknown, and MY on a still motor goes to the favourite position.
+  const bool has_lidar = this->sensor_ != nullptr;
+  traits.set_supports_position(has_lidar);
+  traits.set_supports_stop(has_lidar);
+  traits.set_is_assumed_state(!has_lidar);
   return traits;
 }
 
@@ -131,6 +154,10 @@ void SomfyAwning::send_stop_(const char *reason) {
 }
 
 void SomfyAwning::control(const cover::CoverCall &call) {
+  if (this->sensor_ == nullptr) {
+    this->control_without_lidar_(call);
+    return;
+  }
   if (call.get_stop()) {
     // Only trust what we commanded or what the sensor shows right now; MY on a
     // motor that is standing still would send it to the favourite position.
@@ -188,6 +215,17 @@ void SomfyAwning::control(const cover::CoverCall &call) {
   ESP_LOGD(TAG, "Moving from %.0f%% to %.0f%%", current * 100.0f, target * 100.0f);
   this->target_ = target;
   this->move_(delta > 0 ? +1 : -1, Mode::SEEKING);
+}
+
+void SomfyAwning::control_without_lidar_(const cover::CoverCall &call) {
+  if (!call.get_position().has_value())
+    return;
+  // The motor runs to its own end limits; assume it gets there.
+  bool open = *call.get_position() > cover::COVER_CLOSED;
+  this->remote_->send_command(open ? this->open_cmd_ : this->close_cmd_);
+  this->position = open ? cover::COVER_OPEN : cover::COVER_CLOSED;
+  this->current_operation = cover::COVER_OPERATION_IDLE;
+  this->publish_state();
 }
 
 void SomfyAwning::on_distance_(float cm) {
@@ -287,6 +325,8 @@ void SomfyAwning::on_distance_(float cm) {
 }
 
 void SomfyAwning::loop() {
+  if (this->sensor_ == nullptr)
+    return;
   const uint32_t now = millis();
   const bool stale = now - this->last_valid_ms_ > SENSOR_TIMEOUT_MS;
   const uint32_t elapsed = now - this->mode_start_ms_;

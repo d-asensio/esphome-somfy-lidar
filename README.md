@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/d-asensio/esphome-somfy-lidar/actions/workflows/ci.yml/badge.svg)](https://github.com/d-asensio/esphome-somfy-lidar/actions/workflows/ci.yml)
 
-An ESPHome component for controlling a **Somfy RTS awning** with an ESP32-S3 and a
+An ESPHome component for controlling a **Somfy RTS awning** with an ESP32 and a
 CC1101. The awning's position is **measured** by a TF-Luna lidar instead of estimated
 from travel time.
 
@@ -35,52 +35,52 @@ This is the hardware the example configuration is written for:
 
 | Part | Example | Notes |
 |---|---|---|
-| ESP32-S3 board, 8 MB flash | [diymore ESP32-S3, 8 MB flash / 8 MB PSRAM, USB-C](https://www.amazon.es/dp/B0GZTF723K) | Any ESP32-S3 board works; check the pins below |
+| Board | [Seeed Studio XIAO ESP32-C3](https://www.seeedstudio.com/Seeed-XIAO-ESP32C3-p-5431.html) | Comes with a 2.4 GHz antenna for Wi-Fi |
 | CC1101 module, **433 MHz** | [Ebyte E07-M1101D-SMA](https://www.amazon.es/dp/B0FMR33GWZ) | 3.3 V only, SMA antenna jack |
-| 433 MHz antenna | [Jopto 433 MHz 3 dBi](https://www.amazon.es/dp/B07T71H3MF) | Check the connector, see below |
+| 433 MHz antenna | [Jopto 433 MHz 3 dBi](https://www.amazon.es/dp/B07T71H3MF) | For the CC1101; check the connector, see below |
 | Lidar | [youyeetoo / Benewake TF-Luna](https://www.amazon.es/dp/B088BBJ9SQ) | Used in I2C mode |
-| 5 V USB power supply | | Powers the board and the TF-Luna |
+| 5 V USB-C power supply | | Powers the XIAO and the TF-Luna |
 
 > [!IMPORTANT]
 > **Notes on these parts**
 >
-> - **The E07-M1101D runs on 3.3 V only.** Never connect its VCC to 5 V.
+> - **Two antennas, two radios.** The XIAO ESP32-C3 has no antenna on the board, only a U.FL connector. Always plug in the small 2.4 GHz antenna that comes with it, or Wi-Fi will barely work. The 433 MHz antenna goes on the CC1101 only; the two are not interchangeable.
+> - **The E07-M1101D runs on 3.3 V only.** Connect its VCC to the XIAO's **3V3** pin, never to 5V.
 > - **Antenna connector.** The E07-M1101D-SMA has a standard **SMA** jack. The Jopto antennas are sold for routers with **RP-SMA** connectors. An RP-SMA antenna screws onto an SMA jack, but the centre contacts don't meet, so almost no signal gets out. If the antenna's centre is a hole rather than a pin, put an RP-SMA-to-SMA adapter in between, or use an antenna with an SMA (male) plug. The U.FL pigtails in the antenna kit aren't needed for this module.
-> - **Run the board from USB, not from a battery.** The TF-Luna needs 3.7–5.2 V on its 5 V pin. Most ESP32-S3 boards only provide 5 V on that pin while USB is connected. A single Li-ion cell is too close to the TF-Luna's lower limit.
+> - **Run the XIAO from USB, not from its battery pads.** The TF-Luna needs 3.7–5.2 V. The XIAO's 5V pin carries USB power only, so it has nothing to give when running from a battery.
 > - **The TF-Luna starts in UART mode.** Tie its pin 5 to GND to put it in I2C mode. The cable in the youyeetoo kit leaves pin 5 unconnected, so you need to add that wire.
 > - **I2C pull-ups.** The ESP32's internal pull-ups are enabled, which is fine for short wires. If the cable to the TF-Luna is longer than about 30 cm, add 4.7 kΩ resistors from SDA and SCL to 3.3 V. The ESP and the TF-Luna should sit close together in any case. I2C isn't meant for runs of several metres, so for that, move the ESP next to the sensor rather than extending the cable.
-> - **Check the pins against your board.** I couldn't confirm the pin labels of this exact diymore board. The pins in the example are ones that are safe on any ESP32-S3 with octal PSRAM (see [Wiring](#wiring)). If your board doesn't break out one of them, any other free GPIO works.
 
 ## Wiring
 
-| E07-M1101D (CC1101) | ESP32-S3 |
+The pins are the XIAO's own labels. The CC1101 uses the XIAO's SPI pins (D8–D10) and
+the TF-Luna its I2C pins (D4/D5).
+
+| E07-M1101D (CC1101) | XIAO ESP32-C3 |
 |---|---|
 | VCC | **3V3** |
 | GND | GND |
-| SCK | GPIO12 |
-| MOSI | GPIO11 |
-| MISO | GPIO13 |
-| CSN | GPIO10 |
-| GDO0 | GPIO9 |
+| SCK | D8 (GPIO8) |
+| MISO | D9 (GPIO9) |
+| MOSI | D10 (GPIO10) |
+| CSN | D3 (GPIO5) |
+| GDO0 | D2 (GPIO4) |
 | GDO2 | not connected |
 
-| TF-Luna | ESP32-S3 |
+| TF-Luna | XIAO ESP32-C3 |
 |---|---|
 | 1 – 5V (red) | 5V |
-| 2 – SDA (white) | GPIO4 |
-| 3 – SCL (green) | GPIO5 |
+| 2 – SDA (white) | D4 (GPIO6) |
+| 3 – SCL (green) | D5 (GPIO7) |
 | 4 – GND (black) | GND |
 | 5 – CFG | **GND** (selects I2C) |
 | 6 | not connected |
 
-Pins to **avoid** on an ESP32-S3 with 8 MB octal PSRAM:
-
-| Pins | Reason |
-|---|---|
-| GPIO0, 3, 45, 46 | Strapping pins |
-| GPIO19, 20 | USB |
-| GPIO26–37 | Flash and PSRAM |
-| GPIO43, 44 | Serial console |
+That leaves D1 (GPIO3), D6 (GPIO21) and D7 (GPIO20) free. Avoid D0 (GPIO2): like
+GPIO8 and GPIO9 it is a strapping pin, and something pulling it low at power-up can stop
+the board from booting. GPIO8 and GPIO9 are fine for SPI, because the CC1101 doesn't
+drive them while the board starts. If the board ever refuses to boot, unplug the
+CC1101 to check.
 
 ## Installation
 
@@ -90,7 +90,7 @@ or the command line (B).
 
 ### A. ESPHome Device Builder (Home Assistant add-on)
 
-1. In the ESPHome Device Builder, click **+ New device**, give it a name (for example `awning`), choose **ESP32-S3**, and skip the install step.
+1. In the ESPHome Device Builder, click **+ New device**, give it a name (for example `awning`), choose **ESP32-C3**, and skip the install step.
 2. Click **Edit** on the new device. Replace its YAML with the contents of [`example/awning.yaml`](example/awning.yaml), but keep the `api: encryption: key` the builder generated for you.
 3. Open **Secrets** (top right) and make sure `wifi_ssid` and `wifi_password` exist.
 4. Under `somfy_lidar:`, change `remote_address:` to a random 24-bit hex value, for example `0x5E3A91`. It only has to differ from every other remote you own.
@@ -163,13 +163,13 @@ This is the part that determines whether the setup works well.
 
 ```yaml
 spi:            # CC1101 bus
-  clk_pin: GPIO12
-  mosi_pin: GPIO11
-  miso_pin: GPIO13
+  clk_pin: GPIO8   # D8
+  miso_pin: GPIO9  # D9
+  mosi_pin: GPIO10 # D10
 
 i2c:            # TF-Luna bus
-  sda: GPIO4
-  scl: GPIO5
+  sda: GPIO6       # D4
+  scl: GPIO7       # D5
   frequency: 100kHz
 
 external_components:
@@ -178,8 +178,8 @@ external_components:
 
 somfy_lidar:
   remote_address: 0x5E3A91
-  cs_pin: GPIO10
-  gdo0_pin: GPIO9
+  cs_pin: GPIO5    # D3
+  gdo0_pin: GPIO4  # D2
 ```
 
 | Option | Default | Description |
@@ -188,6 +188,7 @@ somfy_lidar:
 | `cs_pin` | **required** | CC1101 CSN |
 | `gdo0_pin` | **required** | CC1101 GDO0 (transmit data) |
 | `open_command` | `DOWN` | Button that extends the awning |
+| `lidar` | `true` | Set to `false` to run without the TF-Luna, see below |
 | `output_power` | `10` | Transmit power in dBm (-30 to 11) |
 | `lidar_address` | `0x10` | TF-Luna I2C address |
 | `min_signal_strength` | `100` | Lidar readings weaker than this are discarded |
@@ -200,13 +201,26 @@ somfy_lidar:
 | `repeat` | `2` | Extra radio frames per command |
 | `id` | | ID of the cover, for automations |
 
+### Without the lidar
+
+With `lidar: false` the awning works like a basic remote. This is handy while the
+TF-Luna hasn't arrived, or to pair and test the radio first.
+
+- The cover offers only **Open** and **Close**, and the motor runs to its own limits.
+- There is no position and no Stop. Without the sensor the firmware can't tell whether the awning is still moving, and MY on a motor that has stopped would send it to the favourite position. Use the physical remote to stop halfway.
+- Home Assistant shows it as an *assumed state* cover: both buttons stay usable, and the state is simply the last command, remembered across reboots.
+- No `i2c:` block is needed. The lidar sensors and calibration buttons aren't created; **Send PROG** is still there for pairing.
+
+When the TF-Luna arrives, wire it, add the `i2c:` block back, remove `lidar: false`,
+reinstall and press **Calibrate**.
+
 ### Entities
 
 | Entity | Type | |
 |---|---|---|
 | *(device name)* | Cover | Open, close, stop, set position |
 | Distance | Sensor | Measured distance, averaged over 5 s |
-| Calibrate | Button | Automatic calibration |
+| Calibrate | Button | Automatic calibration (lidar only) |
 | Set closed position here | Button | Manual calibration (hidden by default) |
 | Set open position here | Button | Manual calibration (hidden by default) |
 | Send PROG | Button | Pairing (hidden by default) |

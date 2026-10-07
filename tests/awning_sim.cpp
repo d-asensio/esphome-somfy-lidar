@@ -84,6 +84,7 @@ static SimTx tx;
 static somfy_lidar::SomfyRTSRemote remote;
 static sensor::Sensor dist;
 static somfy_lidar::SomfyAwning awning;
+static somfy_lidar::SomfyAwning plain;  // configured with lidar: false
 static std::mt19937 rng(42);
 static std::normal_distribution<float> noise(0.0f, 0.7f);
 static bool sensor_ok = true;
@@ -188,6 +189,24 @@ void setup() {
   sensor_ok = true;
   run(2);
   check(motor.my_while_still == 0, "never sent MY to a still motor");
+
+  printf("== Without lidar: open and close only\n");
+  plain.set_remote(&remote);
+  plain.set_commands(somfy_lidar::Command::DOWN, somfy_lidar::Command::UP);
+  plain.setup();
+  auto traits = plain.get_traits();
+  check(!traits.get_supports_position() && !traits.get_supports_stop() && traits.get_is_assumed_state(),
+        "no position, no stop, assumed state");
+  plain.make_call().set_command_open().perform();
+  run(12);
+  check(motor.ext == 1.0f && plain.position == 1.0f, "opens fully");
+  plain.make_call().set_command_close().perform();
+  run(12);
+  check(motor.ext == 0.0f && plain.position == 0.0f, "closes fully");
+  before = motor.commands;
+  plain.make_call().set_command_stop().perform();
+  run(1);
+  check(motor.commands == before, "stop sends nothing");
 
   printf("\n%d failure(s)\n", failures);
   fflush(stdout);

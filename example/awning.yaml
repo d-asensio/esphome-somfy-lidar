@@ -1,14 +1,16 @@
 # Somfy RTS awning with its position measured by a TF-Luna lidar.
 # https://github.com/d-asensio/esphome-somfy-lidar
 #
-# Hardware: ESP32-S3 board (8MB flash), Ebyte E07-M1101D-SMA (CC1101, 433 MHz)
+# Hardware: Seeed Studio XIAO ESP32-C3, Ebyte E07-M1101D-SMA (CC1101, 433 MHz)
 # with a 433 MHz antenna, and a Benewake TF-Luna in I2C mode.
 #
-# Wiring:
-#   E07-M1101D   VCC->3V3  GND->GND  SCK->GPIO12  MOSI->GPIO11  MISO->GPIO13
-#                CSN->GPIO10  GDO0->GPIO9  (GDO2 unused)
-#   TF-Luna      1 (5V)->5V  2 (SDA)->GPIO4  3 (SCL)->GPIO5  4 (GND)->GND
-#                5 (CFG)->GND to select I2C  (6 unused)
+# Wiring (XIAO pin labels, GPIO in brackets):
+#   E07-M1101D   VCC->3V3  GND->GND  SCK->D8 (GPIO8)  MISO->D9 (GPIO9)
+#                MOSI->D10 (GPIO10)  CSN->D3 (GPIO5)  GDO0->D2 (GPIO4)
+#                GDO2 not connected
+#   TF-Luna      1 (5V)->5V  2 (SDA)->D4 (GPIO6)  3 (SCL)->D5 (GPIO7)
+#                4 (GND)->GND  5 (CFG)->GND to select I2C  6 not connected
+#   Plug the 2.4 GHz antenna that comes with the XIAO into its U.FL connector.
 #
 # Everything above the "Awning" section is standard ESPHome setup.
 
@@ -18,8 +20,7 @@ esphome:
   min_version: 2026.9.0
 
 esp32:
-  board: esp32-s3-devkitc-1
-  flash_size: 8MB
+  board: seeed_xiao_esp32c3
   framework:
     type: esp-idf
 
@@ -42,16 +43,21 @@ captive_portal:
 
 # ---------------------------------------------------------------- Buses
 
-# CC1101 radio
+# CC1101 radio, on the XIAO's labelled SPI pins. GPIO8 and GPIO9 are strapping
+# pins; the CC1101 leaves them alone at boot, so they are safe to use here.
 spi:
-  clk_pin: GPIO12
-  mosi_pin: GPIO11
-  miso_pin: GPIO13
+  clk_pin:
+    number: GPIO8  # D8
+    ignore_strapping_warning: true
+  miso_pin:
+    number: GPIO9  # D9
+    ignore_strapping_warning: true
+  mosi_pin: GPIO10  # D10
 
-# TF-Luna lidar
+# TF-Luna lidar, on the XIAO's labelled I2C pins.
 i2c:
-  sda: GPIO4
-  scl: GPIO5
+  sda: GPIO6  # D4
+  scl: GPIO7  # D5
   frequency: 100kHz
 
 # ---------------------------------------------------------------- Awning
@@ -66,10 +72,14 @@ somfy_lidar:
   remote_address: 0x1A2B3C  # !!! CHANGE ME !!!
 
   # CC1101 pins outside the SPI bus.
-  cs_pin: GPIO10
-  gdo0_pin: GPIO9
+  cs_pin: GPIO5    # D3
+  gdo0_pin: GPIO4  # D2
 
   # Which button extends the awning. Change to UP if "open" retracts it.
   open_command: DOWN
+
+  # No TF-Luna yet? Set this to false: the awning then only opens and closes
+  # fully (no position or stop), and the i2c: block above can be removed.
+  # lidar: false
 
   # Everything else is optional; see the README for all options.

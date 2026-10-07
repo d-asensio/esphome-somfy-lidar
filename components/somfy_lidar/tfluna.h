@@ -1,5 +1,8 @@
 #pragma once
 
+#include "esphome/core/defines.h"
+#ifdef USE_SOMFY_LIDAR_TFLUNA
+
 #include <vector>
 
 #include "esphome/core/component.h"
@@ -46,3 +49,5 @@ class TFLuna : public PollingComponent, public i2c::I2CDevice {
 };
 
 }  // namespace esphome::somfy_lidar
+
+#endif  // USE_SOMFY_LIDAR_TFLUNA

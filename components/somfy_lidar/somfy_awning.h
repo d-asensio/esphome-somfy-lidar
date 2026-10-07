@@ -26,6 +26,9 @@ struct Calibration {
 /// Intermediate positions send UP/DOWN, watch the measured position and send MY
 /// shortly before the target, using the measured speed times stop_latency as lead.
 /// Movement started by the physical remote is picked up from the sensor too.
+///
+/// Without a distance sensor it is a plain assumed-state cover: open and close
+/// only, each running the motor to its own limit.
 class SomfyAwning : public cover::Cover, public Component {
  public:
   void set_remote(SomfyRTSRemote *remote) { this->remote_ = remote; }
@@ -78,6 +81,7 @@ class SomfyAwning : public cover::Cover, public Component {
   };
 
   void control(const cover::CoverCall &call) override;
+  void control_without_lidar_(const cover::CoverCall &call);
   void on_distance_(float cm);
   void move_(int8_t dir, Mode mode);
   void send_stop_(const char *reason);

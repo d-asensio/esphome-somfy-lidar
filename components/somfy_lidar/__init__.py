@@ -35,13 +35,14 @@ from esphome.const import (
 from esphome.core import CORE
 
 CODEOWNERS = ["@d-asensio"]
-DEPENDENCIES = ["spi", "i2c"]
+DEPENDENCIES = ["spi"]  # plus "i2c" when the lidar is used
 AUTO_LOAD = ["remote_base", "sensor", "button", "cover"]
 
 CONF_REMOTE_ADDRESS = "remote_address"
 CONF_ROLLING_CODE = "rolling_code"
 CONF_CS_PIN = "cs_pin"
 CONF_GDO0_PIN = "gdo0_pin"
+CONF_LIDAR = "lidar"
 CONF_LIDAR_ADDRESS = "lidar_address"
 CONF_MIN_SIGNAL_STRENGTH = "min_signal_strength"
 CONF_OPEN_COMMAND = "open_command"
@@ -151,6 +152,9 @@ SENSORS = [
     ),
 ]
 
+# Buttons that only make sense with the lidar.
+LIDAR_BUTTONS = ("CALIBRATE", "SET_CLOSED_HERE", "SET_OPEN_HERE")
+
 BUTTONS = [
     ("CALIBRATE", {"name": "Calibrate", "icon": "mdi:ruler"}),
     (
@@ -189,22 +193,25 @@ def _expand(config):
     config[_REMOTE] = cv.Schema(
         {cv.GenerateID(): cv.declare_id(SomfyRTSRemote)}
     ).extend(cv.COMPONENT_SCHEMA)({})
-    config[_LIDAR] = (
-        cv.Schema({cv.GenerateID(): cv.declare_id(TFLuna)})
-        .extend(cv.polling_component_schema("100ms"))
-        .extend(i2c.i2c_device_schema(0x10))
-    )({"address": config[CONF_LIDAR_ADDRESS]})
+    lidar = config[CONF_LIDAR]
+    if lidar:
+        config[_LIDAR] = (
+            cv.Schema({cv.GenerateID(): cv.declare_id(TFLuna)})
+            .extend(cv.polling_component_schema("100ms"))
+            .extend(i2c.i2c_device_schema(0x10))
+        )({"address": config[CONF_LIDAR_ADDRESS]})
     config[_COVER] = cover.cover_schema(SomfyAwning, device_class="awning")(
         {"name": "None"}  # the device name
     )
-    config[_SENSORS] = {
-        key: schema(dict(entity)) for key, schema, entity in SENSORS
-    }
+    config[_SENSORS] = (
+        {key: schema(dict(entity)) for key, schema, entity in SENSORS} if lidar else {}
+    )
     config[_BUTTONS] = {
         action: button.button_schema(
             AwningButton, entity_category=ENTITY_CATEGORY_CONFIG
         )(dict(entity))
         for action, entity in BUTTONS
+        if lidar or action not in LIDAR_BUTTONS
     }
     return config
 
@@ -229,6 +236,9 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_OUTPUT_POWER, default=10): cv.float_range(
                 min=-30.0, max=11.0
             ),
+            # Without the lidar the awning only opens and closes fully, the
+            # state is assumed, and no `i2c:` block is needed.
+            cv.Optional(CONF_LIDAR, default=True): cv.boolean,
             # TF-Luna on the `i2c:` bus (its pin 5 tied to GND).
             cv.Optional(CONF_LIDAR_ADDRESS, default=0x10): cv.i2c_address,
             # The datasheet treats readings below 100 as unreliable.
@@ -277,6 +287,23 @@ async def to_code(config):
     cg.add(remote.set_initial_rolling_code(config[CONF_ROLLING_CODE]))
     cg.add(remote.set_repeat(config[CONF_REPEAT]))
 
+    awning = cg.new_Pvariable(config[CONF_ID])
+    await cg.register_component(awning, config)
+    await cover.register_cover(awning, config[_COVER])
+    cg.add(awning.set_remote(remote))
+    open_cmd = config[CONF_OPEN_COMMAND]
+    close_cmd = "UP" if open_cmd == "DOWN" else "DOWN"
+    cg.add(awning.set_commands(COMMANDS[open_cmd], COMMANDS[close_cmd]))
+
+    for action, conf in config[_BUTTONS].items():
+        btn = await button.new_button(conf)
+        cg.add(btn.set_parent(awning))
+        cg.add(btn.set_action(getattr(ButtonAction, action)))
+
+    if not config[CONF_LIDAR]:
+        return
+
+    cg.add_define("USE_SOMFY_LIDAR_TFLUNA")
     sensors = {}
     for key, _, _ in SENSORS:
         sensors[key] = await sensor.new_sensor(config[_SENSORS][key])
@@ -289,16 +316,9 @@ async def to_code(config):
     cg.add(lidar.set_temperature_sensor(sensors["temperature"]))
     cg.add(lidar.set_min_signal_strength(config[CONF_MIN_SIGNAL_STRENGTH]))
 
-    awning = cg.new_Pvariable(config[CONF_ID])
-    await cg.register_component(awning, config)
-    await cover.register_cover(awning, config[_COVER])
-    cg.add(awning.set_remote(remote))
     cg.add(awning.set_distance_sensor(sensors["distance_raw"]))
     cg.add(awning.set_reported_distance_sensor(sensors["distance"]))
     cg.add(awning.set_stop_latency_sensor(sensors["stop_latency"]))
-    open_cmd = config[CONF_OPEN_COMMAND]
-    close_cmd = "UP" if open_cmd == "DOWN" else "DOWN"
-    cg.add(awning.set_commands(COMMANDS[open_cmd], COMMANDS[close_cmd]))
     if CONF_CLOSED_DISTANCE in config:
         cg.add(
             awning.set_default_calibration(
@@ -309,11 +329,6 @@ async def to_code(config):
     cg.add(awning.set_position_tolerance(config[CONF_POSITION_TOLERANCE]))
     cg.add(awning.set_min_travel(config[CONF_MIN_TRAVEL]))
     cg.add(awning.set_max_travel_time(config[CONF_MAX_TRAVEL_TIME].total_milliseconds))
-
-    for action, conf in config[_BUTTONS].items():
-        btn = await button.new_button(conf)
-        cg.add(btn.set_parent(awning))
-        cg.add(btn.set_action(getattr(ButtonAction, action)))
 
 
 @automation.register_action(

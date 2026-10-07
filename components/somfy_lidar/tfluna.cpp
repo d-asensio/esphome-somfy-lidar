@@ -1,4 +1,5 @@
 #include "tfluna.h"
+#ifdef USE_SOMFY_LIDAR_TFLUNA
 
 #include <algorithm>
 
@@ -98,3 +99,5 @@ void TFLuna::dump_config() {
 }
 
 }  // namespace esphome::somfy_lidar
+
+#endif  // USE_SOMFY_LIDAR_TFLUNA
