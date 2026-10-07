@@ -5,7 +5,7 @@
 # with a 433 MHz antenna, and a Benewake TF-Luna in I2C mode.
 #
 # Wiring (XIAO pin labels, GPIO in brackets):
-#   E07-M1101D   VCC->3V3  GND->GND  SCK->D8 (GPIO8)  MISO->D9 (GPIO9)
+#   E07-M1101D   VCC->3V3  GND->GND  SCK->D8 (GPIO8)  MISO->D7 (GPIO20)
 #                MOSI->D10 (GPIO10)  CSN->D3 (GPIO5)  GDO0->D2 (GPIO4)
 #                GDO2 not connected
 #   TF-Luna      1 (5V)->5V  2 (SDA)->D4 (GPIO6)  3 (SCL)->D5 (GPIO7)
@@ -43,15 +43,14 @@ captive_portal:
 
 # ---------------------------------------------------------------- Buses
 
-# CC1101 radio, on the XIAO's labelled SPI pins. GPIO8 and GPIO9 are strapping
-# pins; the CC1101 leaves them alone at boot, so they are safe to use here.
+# CC1101 radio. MISO is on D7, not the XIAO's labelled MISO pin D9: GPIO9
+# selects the boot mode, and the CC1101 can pull MISO low while the board starts,
+# which leaves it stuck in download mode ("wait usb download").
 spi:
   clk_pin:
-    number: GPIO8  # D8
+    number: GPIO8  # D8; a strapping pin, harmless while GPIO9 stays high
     ignore_strapping_warning: true
-  miso_pin:
-    number: GPIO9  # D9
-    ignore_strapping_warning: true
+  miso_pin: GPIO20  # D7
   mosi_pin: GPIO10  # D10
 
 # TF-Luna lidar, on the XIAO's labelled I2C pins.

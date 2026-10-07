@@ -53,15 +53,15 @@ This is the hardware the example configuration is written for:
 
 ## Wiring
 
-The pins are the XIAO's own labels. The CC1101 uses the XIAO's SPI pins (D8–D10) and
-the TF-Luna its I2C pins (D4/D5).
+The pins are the XIAO's own labels. The CC1101 uses SPI on D8, D7 and D10, and the
+TF-Luna the XIAO's I2C pins (D4/D5).
 
 | E07-M1101D (CC1101) | XIAO ESP32-C3 |
 |---|---|
 | VCC | **3V3** |
 | GND | GND |
 | SCK | D8 (GPIO8) |
-| MISO | D9 (GPIO9) |
+| MISO | **D7 (GPIO20)**, not D9 |
 | MOSI | D10 (GPIO10) |
 | CSN | D3 (GPIO5) |
 | GDO0 | D2 (GPIO4) |
@@ -76,11 +76,20 @@ the TF-Luna its I2C pins (D4/D5).
 | 5 – CFG | **GND** (selects I2C) |
 | 6 | not connected |
 
-That leaves D1 (GPIO3), D6 (GPIO21) and D7 (GPIO20) free. Avoid D0 (GPIO2): like
-GPIO8 and GPIO9 it is a strapping pin, and something pulling it low at power-up can stop
-the board from booting. GPIO8 and GPIO9 are fine for SPI, because the CC1101 doesn't
-drive them while the board starts. If the board ever refuses to boot, unplug the
-CC1101 to check.
+> [!WARNING]
+> **Don't connect MISO to D9**, even though the XIAO labels it as MISO. GPIO9 decides
+> the boot mode: if it is low at power-up, the board starts in download mode. The
+> serial log then shows `boot:0x0 (USB_BOOT)` and `wait usb download`, and the board
+> never runs the firmware or joins Wi-Fi. While the XIAO starts, the CC1101's CSN isn't
+> driven yet. If the CC1101 sees it as low, it pulls MISO low, so on D9 it can stop the
+> board from booting.
+
+D8 (GPIO8) is also a strapping pin, but it only matters when GPIO9 is low, so SCK can
+stay there. Avoid D0 (GPIO2) and D9 (GPIO9) for anything the CC1101 or TF-Luna drives.
+That leaves D1 (GPIO3) and D6 (GPIO21) free for other uses.
+
+Optionally, add a 10 kΩ resistor from CSN (D3) to 3V3. It keeps the CC1101 deselected
+while the XIAO starts.
 
 ## Installation
 
@@ -164,7 +173,7 @@ This is the part that determines whether the setup works well.
 ```yaml
 spi:            # CC1101 bus
   clk_pin: GPIO8   # D8
-  miso_pin: GPIO9  # D9
+  miso_pin: GPIO20 # D7 (not D9, see Wiring)
   mosi_pin: GPIO10 # D10
 
 i2c:            # TF-Luna bus
