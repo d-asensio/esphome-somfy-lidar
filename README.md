@@ -11,6 +11,13 @@ from travel time.
 - **One config block:** you set the bus pins and a single `somfy_lidar:` block. The radio, lidar, cover, buttons and sensors are set up for you.
 - **Self-calibrating:** one button records the closed and open ends, and every move fine-tunes when to stop.
 
+> [!WARNING]
+> **Somfy RTS motors only.** Check your remote before buying anything: it must say
+> **RTS** (e.g. *Telis 1 RTS*, *Situo 1 RTS*). Remotes labelled **io** (e.g.
+> *Situo 1 io*) belong to io-homecontrol motors. Those use an encrypted, two-way
+> protocol at 868 MHz, and this project can't control them. For io motors, use a
+> Somfy TaHoma or Connectivity Kit with Home Assistant's Overkiz integration.
+
 > **Status:** early. The firmware builds in CI and passes a closed-loop simulation, but
 > it has not been tested on real hardware yet. Test it with the awning in view and the
 > original remote at hand.
